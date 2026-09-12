@@ -23,7 +23,7 @@ def send_telegram_msg(text):
 
 
 def fetch_future_markets():
-    """1. 전체 선물 시장에서 거래대금 제한 없이 1H OI가 증가한 종목 추출"""
+    """1. 전체 선물 시장에서 거래대금 제한 없이 1H OI가 증가한 '모든' 종목 추출"""
     url = "https://api.coinalyze.net/v1/future-markets"
     headers = {"api_key": COINALYZE_API_KEY}
 
@@ -36,7 +36,7 @@ def fetch_future_markets():
         oi_change = m.get("oi_change_percent_1h")
         has_ls_data = m.get("has_long_short_ratio_data", False)
 
-        # 거래대금 필터는 제외, OI가 증가(> 0)하고 롱숏 비율 데이터를 제공하는 종목
+        # OI가 증가(> 0)하고 롱숏 비율 데이터를 제공하는 종목 모두 수집
         if oi_change is not None and oi_change > 0 and has_ls_data:
             oi_increasing.append(m)
 
@@ -45,66 +45,73 @@ def fetch_future_markets():
     return oi_increasing
 
 
-def check_long_account_conditions(symbols):
-    """2. 1시간 전 대비 롱 비율 감소 & 현재 롱 비율 <= 75% 조건 확인"""
+def check_long_account_conditions_all(symbols):
+    """2. 20개씩 묶어서 끝까지 반복 조회 (전 종목 누락 없이 전수 검사)"""
     if not symbols:
         return {}
 
-    # Coinalyze API 1회 배치 제한(최대 20개)에 맞춰 상위 20개 우선 조회
-    target_symbols = symbols[:20]
-    symbols_param = ",".join(target_symbols)
-
     now = int(time.time())
     from_time = now - (3600 * 3)
-
     url = "https://api.coinalyze.net/v1/long-short-ratio-history"
-    params = {
-        "symbols": symbols_param,
-        "interval": "1hour",
-        "from": from_time,
-        "to": now
-    }
     headers = {"api_key": COINALYZE_API_KEY}
 
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=15)
-        response.raise_for_status()
-        ls_data = response.json()
-    except Exception as e:
-        print(f"롱숏 데이터 조회 실패: {e}")
-        return {}
-
     ratio_results = {}
-    for item in ls_data:
-        sym = item.get("symbol")
-        history = item.get("history", [])
+    chunk_size = 20  # Coinalyze 1회 최대 요청 허용치
 
-        # 최근 캔들 2개 비교 (1시간 전 vs 현재)
-        if len(history) >= 2:
-            prev_candle = history[-2]
-            curr_candle = history[-1]
+    # symbols 리스트를 20개씩 쪼개어 끝까지 순회합니다.
+    for i in range(0, len(symbols), chunk_size):
+        chunk = symbols[i:i + chunk_size]
+        symbols_param = ",".join(chunk)
 
-            prev_long = prev_candle.get("l", 0)
-            curr_long = curr_candle.get("l", 0)
+        params = {
+            "symbols": symbols_param,
+            "interval": "1hour",
+            "from": from_time,
+            "to": now
+        }
 
-            # [조건 1] 1시간 전보다 롱 비율 감소
-            # [조건 2] 현재 롱 비율이 75% 이하
-            if curr_long < prev_long and curr_long <= MAX_LONG_RATIO:
-                ratio_results[sym] = {
-                    "curr_long": curr_long,
-                    "prev_long": prev_long,
-                    "diff": curr_long - prev_long
-                }
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+            response.raise_for_status()
+            ls_data = response.json()
+
+            for item in ls_data:
+                sym = item.get("symbol")
+                history = item.get("history", [])
+
+                if len(history) >= 2:
+                    prev_candle = history[-2]
+                    curr_candle = history[-1]
+
+                    prev_long = prev_candle.get("l", 0)
+                    curr_long = curr_candle.get("l", 0)
+
+                    # [조건] 1시간 전보다 롱 감소 & 현재 롱 75% 이하
+                    if curr_long < prev_long and curr_long <= MAX_LONG_RATIO:
+                        ratio_results[sym] = {
+                            "curr_long": curr_long,
+                            "prev_long": prev_long,
+                            "diff": curr_long - prev_long
+                        }
+        except Exception as e:
+            print(f"조회 실패 (심볼 {chunk[:3]}... 외): {e}")
+
+        # 무료 API 요청 횟수 제한(Rate Limit) 방지용 짧은 휴식 (0.3초)
+        time.sleep(0.3)
 
     return ratio_results
 
 
 if __name__ == "__main__":
+    # 1. 조건에 맞는 모든 코인 후보 수집
     candidate_markets = fetch_future_markets()
     candidate_symbols = [m["symbol"] for m in candidate_markets]
+    print(f"OI 증가 후보 종목 총 {len(candidate_symbols)}개 발견. 전수 조사를 시작합니다...")
 
-    matched_ratios = check_long_account_conditions(candidate_symbols)
+    # 2. 20개 제한 없이 끝까지 전수 검사
+    matched_ratios = check_long_account_conditions_all(candidate_symbols)
 
+    # 3. 데이터 결합
     final_list = []
     for m in candidate_markets:
         sym = m["symbol"]
@@ -118,11 +125,12 @@ if __name__ == "__main__":
                 "diff": matched_ratios[sym]["diff"]
             })
 
-    # 결과 전송
+    # 4. 결과 전송 (텔레그램 메시지 길이 한계를 고려해 상위 15개 출력)
     if final_list:
-        lines = ["🚨 <b>[OI 증가 & Long ≤ 75% 감소 감지]</b>\n"]
-        lines.append("<i>(조건: 거래대금 무관 / 1H OI 증가 / 롱 비율 감소 및 75% 이하)</i>\n")
-        for m in final_list[:10]:
+        lines = [f"🚨 <b>[전수 검사: OI 증가 & Long ≤ 75% 감소]</b>\n"]
+        lines.append(f"<i>(총 {len(final_list)}개 만족 / 상위 15개 표시)</i>\n")
+        
+        for m in final_list[:15]:
             lines.append(
                 f"• <b>{m['symbol']}</b>\n"
                 f"  - 1H OI 변동: <code>+{m['oi_change']:.2f}%</code>\n"
@@ -130,8 +138,8 @@ if __name__ == "__main__":
                 f"  - 현재 OI: ${m['oi_usd'] / 1_000_000:.2f}M\n"
             )
         send_telegram_msg("\n".join(lines))
-        print(f"전송 완료: {len(final_list)}개")
+        print(f"전송 완료: 총 {len(final_list)}개 중 상위 15개 전송")
     else:
-        msg = "✅ <b>[Coinalyze 스크리너 점검 완료]</b>\n\n현재 <i>1H OI 증가 + Long 75% 이하 감소</i> 조건을 만족하는 코인이 없습니다."
+        msg = "✅ <b>[전수 검사 완료]</b>\n\n현재 전체 시장에서 <i>1H OI 증가 + Long 75% 이하 감소</i> 조건을 만족하는 코인이 없습니다."
         send_telegram_msg(msg)
-        print("조건 만족 종목 없음 (확인 알림 발송 완료)")
+        print("조건 만족 종목 없음")
