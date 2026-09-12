@@ -7,7 +7,7 @@ TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
 COINALYZE_COOKIE = (os.getenv("COINALYZE_COOKIE") or "").strip()
 
-TARGET_URL = "https://coinalyze.net/screener"
+TARGET_URL = "https://coinalyze.net/?filter=Y20zNDEyX2x0XzAmY20zMzU5X2d0XzAmN19sdF83NQ&columns=YSZlJnMmaSZqJnAmcSY0JjcmY20zNDEyJmNtMzM1OQ&order_by=cm3359&order_dir=desc"
 
 
 def send_telegram_photo(photo_path, caption=""):
