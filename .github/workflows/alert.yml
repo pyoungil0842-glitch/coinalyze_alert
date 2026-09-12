@@ -1,18 +1,16 @@
-name: Coinalyze Hourly Alert
+name: Coinalyze Hourly Screenshot Alert
 
 on:
   schedule:
-    # 매 시간 정각 실행 (UTC 기준)
     - cron: '0 * * * *'
-  # GitHub 웹페이지에서 'Run workflow' 버튼으로 즉시 수동 테스트 가능
   workflow_dispatch:
 
 jobs:
-  run-screener:
+  capture-screener:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 저장소 코드 체크아웃
+      - name: 코드 체크아웃
         uses: actions/checkout@v4
 
       - name: Python 환경 세팅
@@ -26,9 +24,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 스크립트 실행
+      - name: Playwright 브라우저 엔진 설치
+        run: |
+          python -m playwright install chromium --with-deps
+
+      - name: 스크린샷 실행 및 전송
         env:
-          COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
