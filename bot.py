@@ -2,9 +2,9 @@ import os
 import time
 import requests
 
-COINALYZE_API_KEY = os.getenv("COINALYZE_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+COINALYZE_API_KEY = (os.getenv("COINALYZE_API_KEY") or "").strip()
+TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
 
 # 기본 필터링 기준
 MIN_VOLUME_USD = 5_000_000  # 최소 24시간 거래대금 (잡코인 제외용: $5M)
