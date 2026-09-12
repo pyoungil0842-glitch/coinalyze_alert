@@ -78,7 +78,7 @@ def capture_screener():
             print(f"로컬스토리지 항목 {len(local_storage_items)}개 복원 완료")
 
         # 3. 내 맞춤 스크리너 페이지로 최종 이동
-        screener_url = "https://coinalyze.net/crypto-screener"  # 또는 본인의 저장된 뷰 URL
+        screener_url = "https://coinalyze.net/?filter=Y20zNDEyX2x0XzAmY20zMzU5X2d0XzAmN19sdF83NQ&columns=YSZlJnMmaSZqJnAmcSY0JjcmY20zNDEyJmNtMzM1OQ&order_by=cm3359&order_dir=desc"  # 또는 본인의 저장된 뷰 URL
         print(f"스크리너 페이지 접속: {screener_url}")
         page.goto(screener_url, wait_until="networkidle", timeout=60000)
 
